@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 608b3352cac8208234d6d1d99c2e2fd42e2262265dc8820f6a9317f658e56b73
+-- hash: 55cf3f4e673cb10b1f8c8fd5ebb4aee85a6e97d05ff629bff0ee5387aa339088
 
 name:           cargar-horas
 version:        0.1.0.0
@@ -28,6 +28,8 @@ source-repository head
 library
   exposed-modules:
       Lib
+      Tiempo
+      VentanaDeCarga
   other-modules:
       Paths_cargar_horas
   hs-source-dirs:
@@ -37,11 +39,14 @@ library
       aeson
     , base >=4.7 && <5
     , bytestring
+    , containers
+    , directory
     , gtk
     , parsec
     , process
-    , socket
+    , stringsearch
     , time
+    , websockets
   default-language: Haskell2010
 
 executable cargar-horas-exe
@@ -56,11 +61,14 @@ executable cargar-horas-exe
     , base >=4.7 && <5
     , bytestring
     , cargar-horas
+    , containers
+    , directory
     , gtk
     , parsec
     , process
-    , socket
+    , stringsearch
     , time
+    , websockets
   default-language: Haskell2010
 
 test-suite cargar-horas-test
@@ -76,9 +84,12 @@ test-suite cargar-horas-test
     , base >=4.7 && <5
     , bytestring
     , cargar-horas
+    , containers
+    , directory
     , gtk
     , parsec
     , process
-    , socket
+    , stringsearch
     , time
+    , websockets
   default-language: Haskell2010

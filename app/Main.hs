@@ -2,16 +2,15 @@
 module Main where
 
 import Lib
-    ( cargarEvento,
-      convertirEnRegistro,
+    ( convertirEnRegistro,
       guardarRegistros,
       mostrarTodosLosRegistros,
       rutaARegistros,
-      CargarEvento,
-      Registro(metadata, evento),
+      Registro,
+      cargarNuevoRegistro,
       RegistroRecibido )
 import qualified Network.WebSockets as WS
-import VentanaDeCarga ( obtenerEvento )
+import VentanaDeCarga ( mostrarVentanaDeCarga )
 import System.Environment (getArgs)
 import Data.IORef (newIORef)
 import Data.ByteString (concat)
@@ -26,6 +25,7 @@ import Data.Aeson
     ( decodeStrict, (.:), FromJSON(parseJSON), Value(Object) )
 import Data.Aeson.Types (Parser)
 import Data.ByteString.Lazy (toChunks)
+import Tiempo (momentoActual)
 
 main :: IO ()
 main = do
@@ -36,28 +36,27 @@ main = do
   rutaARegistrosDeHoy <- rutaARegistros directorioDeRegistros
   registros <- newIORef []
   forkIO $ do
-    openSocket puertoDelSocket (mostrarTodosLosRegistros directorioDeRegistros) $ \metadata evento -> do
-      cargarEvento registros metadata evento
+    openSocket puertoDelSocket (mostrarTodosLosRegistros directorioDeRegistros) $ \registro -> do
+      cargarNuevoRegistro registros registro
       guardarRegistros rutaARegistrosDeHoy registros
   putStrLn "empezamo"
   initGUI
   mainGUI
 
-openSocket :: Int -> IO String -> CargarEvento -> IO ()
-openSocket puerto mostrarRegistros cargarEvento = WS.runServer "127.0.0.1" puerto app
+openSocket :: Int -> IO String -> (Registro -> IO ()) -> IO ()
+openSocket puerto mostrarRegistros cargarRegistro = WS.runServer "127.0.0.1" puerto app
   where app pending = do
           conexion <- WS.acceptRequest pending
           WS.withPingThread conexion 30 (return ()) $ do
             message <- WS.receiveData conexion
             case decodeStrict message of
               Just mensaje -> case mensaje of
-                AbrirMenuDeCarga -> postGUIAsync $ obtenerEvento cargarEvento
+                AbrirMenuDeCarga -> postGUIAsync $
+                  mostrarVentanaDeCarga ["teespring", "gestion interna", "descanso"] (Just "teespring") cargarRegistro
                 MostrarRegistros -> do
                   registros <- split "\n" . packChars <$> mostrarRegistros
                   mapM_ (WS.sendTextData conexion) registros
-                CargarRegistro registroRecibido -> do
-                  registro <- convertirEnRegistro registroRecibido
-                  cargarEvento (metadata registro) (evento registro)
+                CargarRegistro registroRecibido -> convertirEnRegistro registroRecibido >>= cargarRegistro
               Nothing -> WS.sendTextData conexion ("Ocurrió un problema al recibir el mensaje" :: ByteString)
 
 data Mensaje = AbrirMenuDeCarga

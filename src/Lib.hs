@@ -137,7 +137,7 @@ instance Ord Registro where
 cargar :: Registro -> Registros -> Registros
 cargar registro registros = registro : registros
 
-type CargarEvento = [MetaData] -> Evento -> IO ()
+type CargarEvento = String -> Momento -> [MetaData] -> Evento -> IO ()
 
 readShell :: String -> String -> IO String
 readShell cmd = readProcess "bash" ["-c", cmd]
@@ -157,11 +157,13 @@ obtenerBranchDeRailsCampaignQA =
 obtenerMetadata :: IO [MetaData]
 obtenerMetadata = sequence []
 
-cargarEvento :: IORef Registros -> CargarEvento
-cargarEvento registros metadataDelEvento nuevoEvento = do
-  tiempoActual <- momentoActual
+conMetadataAgregada :: [MetaData] -> Registro -> Registro
+conMetadataAgregada metadataAgregada registro = registro { metadata = metadataAgregada ++ metadata registro }
+
+cargarNuevoRegistro :: IORef Registros -> Registro -> IO ()
+cargarNuevoRegistro registros nuevoRegistro = do
   metadataDefault <- obtenerMetadata
-  modifyIORef registros (cargar $ Registro nuevoEvento tiempoActual "" (metadataDelEvento <> metadataDefault))
+  modifyIORef registros (cargar $ conMetadataAgregada metadataDefault nuevoRegistro)
 
 mostrarDia :: Registro -> String
 mostrarDia registro = dia <> "\n" <> separador
@@ -169,7 +171,7 @@ mostrarDia registro = dia <> "\n" <> separador
         separador = "-------"
 
 mostrarRegistro :: Registro -> String
-mostrarRegistro registro = hora <> " - " <> eventoDelRegistro <> " - " <> metadataDelRegistro
+mostrarRegistro registro = hora <> " - " <> "[" <> tag registro <> "]" <> eventoDelRegistro <> " - " <> metadataDelRegistro
   where hora = formatTime defaultTimeLocale "%T" (tiempo registro)
         eventoDelRegistro = show (evento registro)
         metadataDelRegistro = show (metadata registro)

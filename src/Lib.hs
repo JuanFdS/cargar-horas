@@ -1,3 +1,4 @@
+{-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE OverloadedStrings #-}
 module Lib where
@@ -14,11 +15,10 @@ import Data.Aeson
     ( decodeFileStrict, encodeFile, FromJSON, ToJSON, parseJSON, Value(..), (.:), (.:?), (.!=) )
 import Data.Time.Format ( formatTime, defaultTimeLocale )
 import qualified Data.Function as F (on)
-import qualified Data.List as List ( groupBy, sort, group )
+import qualified Data.List as List (sortOn,  groupBy, sort, group )
 import Data.Ord ( comparing )
 import qualified Data.ByteString as B
 import Data.IORef ( modifyIORef, newIORef, readIORef, IORef )
-import System.Directory (listDirectory)
 import Tiempo
     ( Momento,
       Duracion,
@@ -29,6 +29,7 @@ import Tiempo
       Formato(DiaYHora, HoraYMinutos, AnioMesDia),
       tiempoEntre )
 import Data.Maybe (fromMaybe)
+import Data.Char (toLower)
 
 type Registros = [Registro]
 newtype Evento = Evento String deriving (Eq, Generic)
@@ -44,17 +45,29 @@ instance Show MetaData where
 instance FromJSON MetaData
 instance ToJSON MetaData
 
+newtype Tag = Tag String deriving (FromJSON, ToJSON) via String
+
+instance Ord Tag where
+  compare (Tag unTag) (Tag otroTag) = compare (map toLower unTag) (map toLower otroTag)
+instance Eq Tag where
+  (Tag unTag) == (Tag otroTag) = map toLower unTag == map toLower otroTag
+instance Show Tag where
+  show (Tag tag) = map toLower tag
+
 data Registro = Registro {
   evento :: Evento,
   tiempo :: Momento,
-  tag :: String,
+  tag :: Tag,
   metadata :: [MetaData]
 } deriving (Eq, Show, Generic)
+
+juntarEventos :: Evento -> Evento -> Evento
+juntarEventos (Evento e1) (Evento e2) = Evento (e1 <> ", " <> e2)
 
 data RegistroRecibido = RegistroRecibido {
   eventoRecibido :: Evento,
   tiempoRecibido :: Maybe Momento,
-  tagRecibido :: Maybe String,
+  tagRecibido :: Maybe Tag,
   metadataRecibida :: [MetaData]
 } deriving (Eq, Show, Generic)
 
@@ -66,7 +79,7 @@ instance FromJSON RegistroRecibido where
 
 convertirEnRegistro :: RegistroRecibido -> IO Registro
 convertirEnRegistro (RegistroRecibido evento talVezTiempo talVezTag metadata) = do
-  let tag = fromMaybe "" talVezTag
+  let tag = fromMaybe (Tag "") talVezTag
   case talVezTiempo of
     Just tiempo -> pure $ Registro evento tiempo tag metadata
     Nothing -> Registro evento <$> momentoActual <*> pure tag <*> pure metadata
@@ -75,64 +88,13 @@ convertirEnRegistro (RegistroRecibido evento talVezTiempo talVezTag metadata) = 
 instance FromJSON Registro where
   parseJSON (Object o) = Registro <$> o .: "evento"
                                   <*> o .: "tiempo"
-                                  <*> o .:? "tag" .!= ""
+                                  <*> o .:? "tag" .!= Tag ""
                                   <*> o .: "metadata"
 
 instance ToJSON Registro
 
-data BloqueDeHoras = BloqueDeHoras {
-  horas :: Duracion,
-  eventoBloque :: Evento,
-  tagBloque :: String
-} deriving (Eq, Generic)
-
-instance Show BloqueDeHoras where
-  show (BloqueDeHoras horas eventoBloque tagBloque) = "[" <> tagBloque <> "] " <> show eventoBloque <> ": " <> formateado HoraYMinutos horas
-
-groupBy :: (Ord b) => (a -> b) -> [a] -> Map.Map b [a]
-groupBy compareField = Map.fromListWith (flip (++)) . map (\x -> (compareField x, [x]))
-
-porDia :: [Registro] -> Map.Map Dia [Registro]
-porDia = groupBy (dia . tiempo) . List.sort
-
-bloquesDeHorasPorDia :: [Registro] -> Map.Map Dia [BloqueDeHoras]
-bloquesDeHorasPorDia =
-  fmap (\registros -> agruparBloquesIguales $ zipWith crearBloque registros (tail registros)) . porDia
-    where crearBloque registroInicio registroFin =
-            BloqueDeHoras ((tiempoEntre `F.on` tiempo) registroFin registroInicio) (evento registroInicio) (tag registroInicio)
-
-agruparBloquesIguales :: [BloqueDeHoras] -> [BloqueDeHoras]
-agruparBloquesIguales = fmap (foldr1 agruparBloqueIgual) . List.groupBy ((==) `F.on` eventoBloque)
-  where agruparBloqueIgual (BloqueDeHoras horas evento tag) (BloqueDeHoras otrasHoras _ _) = BloqueDeHoras (horas + otrasHoras) evento tag
-
-agruparBloques :: BloqueDeHoras -> BloqueDeHoras -> BloqueDeHoras
-agruparBloques (BloqueDeHoras horas evento tag) (BloqueDeHoras otrasHoras otroEvento _) =
-              BloqueDeHoras (horas + otrasHoras) (Evento $ show evento <> ", " <> show otroEvento) tag
-
-bloquesPorTag :: [BloqueDeHoras] -> Map.Map String BloqueDeHoras
-bloquesPorTag = fmap (foldr1 agruparBloques) . groupBy tagBloque
-
-joinString :: String -> [String] -> String
-joinString separator = foldr (\acum text -> acum <> separator <> text) ""
-
-mostrarBloquesDeUnDia :: [BloqueDeHoras] -> String
-mostrarBloquesDeUnDia = joinString "\n" . fmap show
-
-mostrarBloquesAgrupadosDeUnDia :: [BloqueDeHoras] -> String
-mostrarBloquesAgrupadosDeUnDia = joinString "\n" . fmap show . Map.elems . bloquesPorTag
-
-mostrarSinEvento :: BloqueDeHoras -> String
-mostrarSinEvento bloque = "[" <> tagBloque bloque <> "]: " <> formatTime defaultTimeLocale "%H:%0M" (horas bloque)
-
-mostrarResumenDeUnDia :: [BloqueDeHoras] -> String
-mostrarResumenDeUnDia bloques =
-  mostrarBloquesDeUnDia bloques <> "\n-Resumen-\n" <> (joinString "\n" . fmap mostrarSinEvento . Map.elems . bloquesPorTag $ bloques)
-
 instance Show Evento where
     show (Evento evento) = evento
-
-instance Ord Registro where
-    compare = comparing tiempo
 
 cargar :: Registro -> Registros -> Registros
 cargar registro registros = registro : registros
@@ -171,7 +133,7 @@ mostrarDia registro = dia <> "\n" <> separador
         separador = "-------"
 
 mostrarRegistro :: Registro -> String
-mostrarRegistro registro = hora <> " - " <> "[" <> tag registro <> "]" <> eventoDelRegistro <> " - " <> metadataDelRegistro
+mostrarRegistro registro = hora <> " - " <> "[" <> show (tag registro) <> "]" <> eventoDelRegistro <> " - " <> metadataDelRegistro
   where hora = formatTime defaultTimeLocale "%T" (tiempo registro)
         eventoDelRegistro = show (evento registro)
         metadataDelRegistro = show (metadata registro)
@@ -180,14 +142,14 @@ mostrarRegistrosDelDia :: [Registro] -> String
 mostrarRegistrosDelDia registrosDelDia =
   unlines $ mostrarDia (head registrosDelDia) : map mostrarRegistro registrosDelDia
 
-mostrarRegistros :: Registros -> String
-mostrarRegistros = foldMap mostrarRegistrosDelDia . Map.elems . porDia
+groupBy :: (Ord b) => (a -> b) -> [a] -> Map.Map b [a]
+groupBy compareField = Map.fromListWith (flip (++)) . map (\x -> (compareField x, [x]))
 
-mostrarTodosLosRegistros :: FilePath -> IO String
-mostrarTodosLosRegistros directorio = do
-  archivosDeRegistros <- fmap ((directorio <> "/") <>) <$> listDirectory directorio
-  todosLosRegistros <- foldMap leerRegistros archivosDeRegistros
-  pure $ mostrarRegistros todosLosRegistros
+registrosPorDia :: [Registro] -> Map.Map Dia [Registro]
+registrosPorDia = groupBy (dia . tiempo) . List.sortOn tiempo
+
+mostrarRegistros :: Registros -> String
+mostrarRegistros = foldMap mostrarRegistrosDelDia . Map.elems . registrosPorDia
 
 leerRegistros :: FilePath -> IO Registros
 leerRegistros rutaARegistros = do

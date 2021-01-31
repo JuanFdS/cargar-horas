@@ -31,6 +31,8 @@ dependencies:
 - containers
 - directory
 - stringsearch
+- with-utf8
+- utf8-string
 
 library:
   source-dirs: src

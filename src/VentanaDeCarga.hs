@@ -3,7 +3,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 module VentanaDeCarga where
 
-import Lib (Registro(..), Evento(..))
+import Lib (Registro(..), Evento(..), Tag(..))
 import Graphics.UI.Gtk.Misc.Calendar (calendarNew)
 import Graphics.UI.Gtk.Layout.Table (tableAttachDefaults, tableNew)
 import Graphics.UI.Gtk.Abstract.Container (containerAdd)
@@ -104,14 +104,14 @@ ventanaDeCargaNew = do
 data RegistroInput = RegistroInput {
   contenedorRegistroInput :: Table,
   momentoInput :: MomentoInput,
-  tagEntry :: Entry,
+  tagEntry :: Entrada Tag,
   eventoEntry :: Entrada Evento
 }
 
 registroInputNew :: [String] -> IO RegistroInput
 registroInputNew tagsPosibles = do
   eventoEntry <- eventoEntryNew
-  tagEntry <- entryWithCompletionNew tagsPosibles
+  tagEntry <- Entrada <$> entryWithCompletionNew tagsPosibles
   momentoInput <- momentoActual >>= momentoInputNew
 
   table <- tableNew 2 2 True
@@ -127,7 +127,7 @@ setDefaultTag registroInput defaultTag = entrySetText (tagEntry registroInput) d
 getRegistro :: RegistroInput -> IO (Maybe Registro)
 getRegistro (RegistroInput contenedor momentoInput tagEntry eventoEntry) = do
   evento <- getValor Evento eventoEntry
-  tag <- entryGetText tagEntry
+  tag <- getValor Tag tagEntry
   momento <- getMomento momentoInput
   pure $ Registro evento <$> momento <*> pure tag <*> pure []
 
